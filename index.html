@@ -1,0 +1,399 @@
+<title>给小皮的夜空</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@300;400;500&display=swap">
+<style>
+  /* Layout: full-bleed starfield canvas behind a centered, fading message column.
+     Single committed dark theme — a night sky only reads in the dark. */
+  :root {
+    --night-top: #060a1f;      /* deep indigo at the top */
+    --night-bot: #0b1538;      /* lighter navy near the horizon */
+    --star: #eaf2ff;           /* star / text white-blue */
+    --accent: #8fb4ff;         /* soft moonlight blue */
+    --glow: #ffd9a8;           /* warm highlight for the name */
+    --muted: #9fb0d8;          /* dimmed text */
+    color-scheme: dark;
+    --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+    --hand: "Ma Shan Zheng", "Noto Serif SC", cursive;
+  }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(130% 90% at 50% 8%, rgba(60,90,170,0.28), transparent 55%),
+      linear-gradient(180deg, var(--night-top), var(--night-bot));
+    color: var(--star);
+    font-family: var(--serif);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #sky {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    pointer-events: none;      /* taps fall through to the canvas */
+  }
+
+  .eyebrow {
+    font-size: clamp(0.7rem, 2.6vw, 0.85rem);
+    letter-spacing: 0.5em;
+    text-indent: 0.5em;
+    color: var(--accent);
+    opacity: 0;
+    animation: rise 1.6s ease 0.3s forwards;
+  }
+
+  .name {
+    font-family: var(--hand);
+    font-size: clamp(3.4rem, 17vw, 8rem);
+    line-height: 1;
+    margin: 0.18em 0 0.35em;
+    color: var(--glow);
+    text-shadow:
+      0 0 18px rgba(255,217,168,0.55),
+      0 0 46px rgba(255,210,150,0.3);
+    opacity: 0;
+    animation: rise 1.8s ease 0.7s forwards;
+  }
+
+  .lines {
+    position: relative;
+    min-height: 3.6em;
+    width: min(32ch, 86vw);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .line {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    font-size: clamp(1.05rem, 4.6vw, 1.5rem);
+    font-weight: 300;
+    line-height: 1.9;
+    color: var(--star);
+    text-wrap: balance;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 1.4s ease, transform 1.4s ease;
+    text-shadow: 0 0 20px rgba(143,180,255,0.35);
+  }
+  .line.show { opacity: 0.96; transform: none; }
+
+  .hint {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+    text-align: center;
+    font-size: clamp(0.72rem, 2.8vw, 0.9rem);
+    letter-spacing: 0.32em;
+    text-indent: 0.32em;
+    color: var(--muted);
+    opacity: 0;
+    animation: breathe 4.5s ease-in-out 2.4s infinite;
+    pointer-events: none;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.7; }
+  }
+
+  /* floating word that blooms where you tap */
+  .spark-word {
+    position: fixed;
+    transform: translate(-50%, -50%);
+    font-family: var(--serif);
+    font-size: clamp(0.95rem, 4vw, 1.25rem);
+    color: var(--glow);
+    text-shadow: 0 0 16px rgba(255,217,168,0.7);
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    z-index: 5;
+  }
+  @keyframes floatUp {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+    18%  { opacity: 1; transform: translate(-50%, -62%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -150%) scale(1.02); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .eyebrow, .name { animation: none; opacity: 1; }
+    .hint { animation: none; opacity: 0.5; }
+  }
+</style>
+
+<canvas id="sky"></canvas>
+
+<div class="stage">
+  <div class="eyebrow">献给我的整片星空</div>
+  <h1 class="name">小皮</h1>
+  <div class="lines" id="lines"></div>
+</div>
+
+<div class="hint">轻触夜空</div>
+
+<script>
+(() => {
+  "use strict";
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- Editable content ------------------------------------------------
+  // 想对小皮说的话：改这里的句子就行，可多可少。
+  const MESSAGES = [
+    "小皮，你是我整片夜空里\n最亮的那一颗星。",
+    "遇见你之后，\n再平凡的日子也开始发光。",
+    "想把所有的温柔和晚安，\n都轻轻留给你。",
+    "无论隔多远，\n我们抬头看到的是同一片星空。",
+    "和你在一起的每一天，\n都值得被记很久很久。",
+  ];
+  // 轻触夜空时冒出的小词
+  const SPARK_WORDS = ["喜欢你", "想你", "晚安", "小皮", "❤", "在一起", "一直都在", "宝贝"];
+  // ---------------------------------------------------------------------
+
+  // ---- Starfield -------------------------------------------------------
+  const canvas = document.getElementById("sky");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, DPR = 1;
+  let stars = [];
+  let heart = [];       // constellation points
+  let shooting = null;
+  let pointer = { x: 0.5, y: 0.5 };   // for gentle parallax
+  let t0 = performance.now();
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildStars();
+    buildHeart();
+  }
+
+  function buildStars() {
+    const count = Math.round(Math.min(260, (W * H) / 4200));
+    stars = [];
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * 1.3 + 0.3,
+        base: Math.random() * 0.5 + 0.35,
+        tw: Math.random() * Math.PI * 2,     // twinkle phase
+        sp: Math.random() * 1.4 + 0.4,       // twinkle speed
+        depth: Math.random() * 0.6 + 0.2,    // parallax depth
+        warm: Math.random() < 0.12,          // a few warm stars
+      });
+    }
+  }
+
+  // Heart-shaped constellation, centered a bit below the middle text.
+  function buildHeart() {
+    heart = [];
+    const cx = W / 2;
+    const cy = H * 0.72;
+    const scale = Math.min(W, H) * 0.03;
+    const N = 16;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const hx = 16 * Math.pow(Math.sin(a), 3);
+      const hy = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+      heart.push({ x: cx + hx * scale, y: cy - hy * scale });
+    }
+  }
+
+  function maybeShoot(now) {
+    if (shooting || reduce) return;
+    if (Math.random() < 0.004) {
+      const fromLeft = Math.random() < 0.5;
+      shooting = {
+        x: fromLeft ? -40 : W + 40,
+        y: Math.random() * H * 0.5,
+        vx: (fromLeft ? 1 : -1) * (6 + Math.random() * 4),
+        vy: 2.4 + Math.random() * 1.6,
+        life: 0,
+        max: 60 + Math.random() * 30,
+      };
+    }
+  }
+
+  function draw(now) {
+    const t = (now - t0) / 1000;
+    ctx.clearRect(0, 0, W, H);
+
+    // parallax offset toward pointer
+    const ox = (pointer.x - 0.5);
+    const oy = (pointer.y - 0.5);
+
+    // stars
+    for (const s of stars) {
+      const tw = reduce ? s.base : s.base + Math.sin(t * s.sp + s.tw) * 0.35;
+      const alpha = Math.max(0.05, Math.min(1, tw));
+      const px = s.x - ox * 26 * s.depth;
+      const py = s.y - oy * 26 * s.depth;
+      ctx.beginPath();
+      ctx.arc(px, py, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = s.warm
+        ? `rgba(255,220,180,${alpha})`
+        : `rgba(234,242,255,${alpha})`;
+      ctx.shadowBlur = s.r * 4;
+      ctx.shadowColor = s.warm ? "rgba(255,210,160,0.8)" : "rgba(180,205,255,0.7)";
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // heart constellation — faint connecting lines + glowing nodes, gentle pulse
+    const pulse = reduce ? 0.5 : 0.5 + Math.sin(t * 1.1) * 0.22;
+    ctx.beginPath();
+    for (let i = 0; i < heart.length; i++) {
+      const p = heart[i];
+      const px = p.x - ox * 10;
+      const py = p.y - oy * 10;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = `rgba(143,180,255,${0.12 + pulse * 0.12})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    for (const p of heart) {
+      const px = p.x - ox * 10;
+      const py = p.y - oy * 10;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,217,168,${0.5 + pulse * 0.5})`;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(255,210,160,0.9)";
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // shooting star
+    maybeShoot(now);
+    if (shooting) {
+      const sh = shooting;
+      sh.x += sh.vx;
+      sh.y += sh.vy;
+      sh.life++;
+      const tailX = sh.x - sh.vx * 6;
+      const tailY = sh.y - sh.vy * 6;
+      const grad = ctx.createLinearGradient(sh.x, sh.y, tailX, tailY);
+      grad.addColorStop(0, "rgba(255,255,255,0.9)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sh.x, sh.y);
+      ctx.lineTo(tailX, tailY);
+      ctx.stroke();
+      if (sh.life > sh.max || sh.x < -60 || sh.x > W + 60 || sh.y > H + 60) shooting = null;
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  // ---- Rotating messages ----------------------------------------------
+  const linesEl = document.getElementById("lines");
+  let idx = 0;
+  const lineNodes = MESSAGES.map((m) => {
+    const el = document.createElement("p");
+    el.className = "line";
+    el.innerHTML = m.replace(/\n/g, "<br>");
+    linesEl.appendChild(el);
+    return el;
+  });
+
+  function showLine(i) {
+    lineNodes.forEach((n, k) => n.classList.toggle("show", k === i));
+  }
+  function cycle() {
+    showLine(idx);
+    idx = (idx + 1) % lineNodes.length;
+  }
+
+  // ---- Tap to bloom a little star-word --------------------------------
+  function bloom(x, y) {
+    const word = SPARK_WORDS[Math.floor(Math.random() * SPARK_WORDS.length)];
+    const el = document.createElement("div");
+    el.className = "spark-word";
+    el.textContent = word;
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    document.body.appendChild(el);
+    el.style.animation = "floatUp 2.4s ease-out forwards";
+    setTimeout(() => el.remove(), 2500);
+
+    // a tiny burst of stars at the tap point
+    if (!reduce) {
+      for (let i = 0; i < 10; i++) {
+        stars.push({
+          x, y,
+          r: Math.random() * 1.4 + 0.4,
+          base: 0.9,
+          tw: Math.random() * 6,
+          sp: 2,
+          depth: 0.3,
+          warm: Math.random() < 0.5,
+          _vx: (Math.random() - 0.5) * 2,
+          _vy: (Math.random() - 0.5) * 2,
+          _fade: true,
+        });
+      }
+    }
+  }
+
+  // Drift & fade the burst stars so they don't pile up forever.
+  setInterval(() => {
+    stars = stars.filter((s) => {
+      if (!s._fade) return true;
+      s.x += s._vx; s.y += s._vy; s.base *= 0.92;
+      return s.base > 0.05;
+    });
+  }, 60);
+
+  window.addEventListener("pointermove", (e) => {
+    pointer.x = e.clientX / W;
+    pointer.y = e.clientY / H;
+  }, { passive: true });
+
+  window.addEventListener("pointerdown", (e) => {
+    bloom(e.clientX, e.clientY);
+  });
+
+  window.addEventListener("resize", resize);
+
+  // boot
+  resize();
+  requestAnimationFrame(draw);
+  cycle();
+  setInterval(cycle, 5200);
+})();
+</script>
